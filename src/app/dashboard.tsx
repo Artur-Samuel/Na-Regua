@@ -35,6 +35,19 @@ const C = {
   warning: "#D97706", warningLight: "#FEF3C7",
 }
 
+/**
+ * MySQL retorna "YYYY-MM-DD HH:MM:SS", que alguns engines de JS
+ * (especialmente Android/Hermes) interpretam de forma inconsistente
+ * com `new Date(string)`. Convertendo manualmente evitamos isso.
+ */
+function formatarData(mysqlDateTime: string | null | undefined): string {
+  if (!mysqlDateTime) return ""
+  const [datePart] = mysqlDateTime.split(" ")
+  const [ano, mes, dia] = datePart.split("-")
+  if (!ano || !mes || !dia) return ""
+  return `${dia}/${mes}/${ano}`
+}
+
 function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
   if (!value) return null
   return (
@@ -65,13 +78,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [barbearia, setBarbearia] = useState<Barbearia | null>(null)
   const [nomeUsuario, setNomeUsuario] = useState("")
-  const [debugInfo, setDebugInfo] = useState("")
   const fadeAnim = useRef(new Animated.Value(0)).current
 
   async function checkBarbershop() {
     try {
       const user = await getUser()
-      setDebugInfo(`user: ${JSON.stringify(user)}`)
 
       if (!user) {
         router.replace("/")
@@ -84,15 +95,13 @@ export default function Dashboard() {
       const res = await fetch(url)
       const data = await res.json()
 
-      setDebugInfo(`user: ${JSON.stringify(user)}\nurl: ${url}\nresposta: ${JSON.stringify(data)}`)
-
       if (data.status === "success" && data.barbearia) {
         setBarbearia(data.barbearia)
       } else {
         setBarbearia(null)
       }
     } catch (err: any) {
-      setDebugInfo(`ERRO: ${err?.message ?? String(err)}`)
+      if (__DEV__) console.warn("Erro ao buscar barbearia:", err)
       setBarbearia(null)
     } finally {
       setLoading(false)
@@ -117,20 +126,23 @@ export default function Dashboard() {
     )
   }
 
-  // ── sem barbearia: mostra debug ──
+  // ── sem barbearia ──
   if (!barbearia) {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
-          <Text style={{ fontSize: 16, fontWeight: "bold", color: C.text }}>Debug info:</Text>
-          <Text style={{ fontSize: 13, color: C.muted, lineHeight: 20 }}>{debugInfo || "nenhuma info"}</Text>
+        <View style={s.emptyScreen}>
+          <Text style={s.emptyEmoji}>💈</Text>
+          <Text style={s.emptyTitle}>Nenhuma barbearia ainda</Text>
+          <Text style={s.emptyText}>
+            Cadastre sua barbearia para começar a receber agendamentos.
+          </Text>
           <TouchableOpacity style={s.btnPrimary} onPress={() => router.push("/create-barbershop")}>
             <Text style={s.btnPrimaryText}>+ Criar minha barbearia</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.btnOutline} onPress={handleLogout}>
             <Text style={s.btnOutlineText}>Sair</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </View>
     )
   }
@@ -187,7 +199,7 @@ export default function Dashboard() {
             <InfoRow
               icon="🗓️"
               label="Cadastrada em"
-              value={barbearia.criadoEm ? new Date(barbearia.criadoEm).toLocaleDateString("pt-BR") : ""}
+              value={formatarData(barbearia.criadoEm)}
             />
 
             <TouchableOpacity style={s.btnPrimary} onPress={() => router.push("/")} activeOpacity={0.8}>
@@ -226,6 +238,10 @@ const s = StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingTop: 20 },
   loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, backgroundColor: C.bg },
   loadingText: { fontSize: 14, color: C.muted },
+  emptyScreen: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, gap: 12 },
+  emptyEmoji: { fontSize: 56, marginBottom: 8 },
+  emptyTitle: { fontSize: 22, fontWeight: "700", color: C.text, textAlign: "center" },
+  emptyText: { fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 22 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   pageTitle: { fontSize: 26, fontWeight: "800", color: C.text, letterSpacing: -0.5 },
   pageSubtitle: { fontSize: 13, color: C.muted, marginTop: 2 },
