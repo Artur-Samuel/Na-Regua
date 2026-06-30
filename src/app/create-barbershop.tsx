@@ -1,21 +1,21 @@
 import { router } from "expo-router"
 import { useState } from "react"
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { Button } from "../components/button"
 import { Input } from "../components/input"
-import { createBarbershop } from "../services/api"
+import { createBarbershop, getUser } from "../services/api"
 
 /* ─── paleta ─────────────────────────────────────────── */
 const C = {
@@ -75,9 +75,6 @@ export default function CreateBarbershop() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Errors>({})
 
-  // ⚠️ substituir pelo userId do contexto de autenticação
-  const userId = 4
-
   function validate(): boolean {
     const e: Errors = {}
     if (!nome.trim()) e.nome = "Nome é obrigatório"
@@ -91,22 +88,21 @@ export default function CreateBarbershop() {
   }
 
   async function handleCreate() {
+    // ✅ pega o usuário real logado (em vez de userId fixo)
+    const user = await getUser()
+
+    if (!user) {
+      Alert.alert("Sessão expirada", "Faça login novamente para continuar.")
+      router.replace("/")
+      return
+    }
+
     if (!validate()) return
 
     setLoading(true)
 
-    /**
-     * ATENÇÃO — alinhamento com o banco:
-     * A tabela `barbearias` tem FK para `barbeiroId`, não `userId`.
-     * Seu endpoint `create_barbershop.php` deve:
-     *   1. Receber o userId
-     *   2. Buscar o barbeiroId: SELECT barbeiroId FROM barbeiros WHERE userId = :userId
-     *   3. Inserir em barbearias usando esse barbeiroId
-     *
-     * Se o usuário ainda não tiver linha em `barbeiros`, o endpoint deve criá-la antes.
-     */
     const data = await createBarbershop({
-      userId,
+      userId: user.id,
       nome,
       descricao,
       endereco,
