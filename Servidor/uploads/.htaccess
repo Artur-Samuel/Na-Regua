@@ -1,0 +1,5 @@
+# Só imagens: nada aqui dentro é executado como script
+php_flag engine off
+<FilesMatch "\.(php|phtml|phar)$">
+  Require all denied
+</FilesMatch>

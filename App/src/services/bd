@@ -1,0 +1,176 @@
+CREATE DATABASE projetofinal;
+USE projetofinal;
+
+CREATE TABLE users (
+  userId      INT AUTO_INCREMENT PRIMARY KEY,
+  nome        VARCHAR(100) NOT NULL,
+  email       VARCHAR(100) NOT NULL UNIQUE,
+  senha       VARCHAR(255) NOT NULL,
+  telefone    VARCHAR(20),
+  fotoPerfil  VARCHAR(255),
+  tipo        ENUM('cliente','barbeiro') NOT NULL,
+  criadoEm    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE barbearias (
+  barbeariaId     INT AUTO_INCREMENT PRIMARY KEY,
+  criadoPorUserId INT NOT NULL,
+
+  nome        VARCHAR(100) NOT NULL,
+  descricao   TEXT,
+  endereco    VARCHAR(255) NOT NULL,
+  cidade      VARCHAR(100) NOT NULL,
+
+  latitude    DECIMAL(10,8),
+  longitude   DECIMAL(11,8),
+
+  telefone    VARCHAR(20),
+  foto        VARCHAR(255),
+
+  criadoEm    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (criadoPorUserId) REFERENCES users(userId)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_barbearias_criadoPorUserId ON barbearias(criadoPorUserId);
+
+CREATE TABLE barbeiros (
+  barbeiroId    INT AUTO_INCREMENT PRIMARY KEY,
+  userId        INT NOT NULL,
+  barbeariaId   INT NULL,
+  souDono       BOOLEAN NOT NULL DEFAULT FALSE,
+
+  especialidade VARCHAR(100),
+  descricao     TEXT,
+
+  criadoEm      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (userId) REFERENCES users(userId)
+    ON DELETE CASCADE,
+  FOREIGN KEY (barbeariaId) REFERENCES barbearias(barbeariaId)
+    ON DELETE SET NULL
+);
+
+CREATE INDEX idx_barbeiros_userId ON barbeiros(userId);
+CREATE INDEX idx_barbeiros_barbeariaId ON barbeiros(barbeariaId);
+
+CREATE TABLE convites (
+  conviteId    INT AUTO_INCREMENT PRIMARY KEY,
+  barbeariaId  INT NOT NULL,
+  barbeiroId   INT NOT NULL,
+  status       ENUM('pendente','aceito','recusado') NOT NULL DEFAULT 'pendente',
+  criadoEm     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  respondidoEm TIMESTAMP NULL,
+
+  FOREIGN KEY (barbeariaId) REFERENCES barbearias(barbeariaId)
+    ON DELETE CASCADE,
+  FOREIGN KEY (barbeiroId) REFERENCES barbeiros(barbeiroId)
+    ON DELETE CASCADE,
+
+  -- Impede dois convites 'pendente' simultâneos para o mesmo par.
+  -- Um novo convite após 'recusado' é permitido (status diferente).
+  UNIQUE KEY uq_convite_pendente (barbeariaId, barbeiroId, status)
+);
+
+CREATE INDEX idx_convites_barbeiroId ON convites(barbeiroId);
+CREATE INDEX idx_convites_status ON convites(status);
+
+CREATE TABLE servicos (
+  servicoId    INT AUTO_INCREMENT PRIMARY KEY,
+  barbeiroId   INT NOT NULL,
+  nome         VARCHAR(100) NOT NULL,
+  preco        DECIMAL(10,2) NOT NULL,
+  duracaoMin   INT NOT NULL,
+  ativo        BOOLEAN NOT NULL DEFAULT TRUE,
+  criadoEm     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (barbeiroId) REFERENCES barbeiros(barbeiroId)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_servicos_barbeiroId ON servicos(barbeiroId);
+
+CREATE TABLE jornadas (
+  jornadaId   INT AUTO_INCREMENT PRIMARY KEY,
+  barbeiroId  INT NOT NULL,
+  diaSemana   TINYINT NOT NULL,
+  horaInicio  TIME NOT NULL,
+  horaFim     TIME NOT NULL,
+  ativo       BOOLEAN NOT NULL DEFAULT TRUE,
+
+  FOREIGN KEY (barbeiroId) REFERENCES barbeiros(barbeiroId)
+    ON DELETE CASCADE,
+
+  CHECK (diaSemana BETWEEN 0 AND 6),
+  CHECK (horaFim > horaInicio)
+);
+
+CREATE INDEX idx_jornadas_barbeiroId ON jornadas(barbeiroId);
+
+CREATE TABLE bloqueios (
+  bloqueioId  INT AUTO_INCREMENT PRIMARY KEY,
+  barbeiroId  INT NOT NULL,
+  data        DATE NOT NULL,
+  horaInicio  TIME NULL,   -- NULL junto com horaFim NULL = bloqueia o dia inteiro
+  horaFim     TIME NULL,
+  motivo      VARCHAR(255),
+  criadoEm    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (barbeiroId) REFERENCES barbeiros(barbeiroId)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_bloqueios_barbeiro_data ON bloqueios(barbeiroId, data);
+
+CREATE TABLE agendamentos (
+  agendamentoId INT AUTO_INCREMENT PRIMARY KEY,
+  clienteId     INT NOT NULL,
+  barbeiroId    INT NOT NULL,
+  data          DATE NOT NULL,
+  horaInicio    TIME NOT NULL,
+  horaFim       TIME NOT NULL,
+  valorTotal    DECIMAL(10,2) NOT NULL,
+  status        ENUM('confirmado','cancelado','concluido') NOT NULL DEFAULT 'confirmado',
+  criadoEm      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (clienteId) REFERENCES users(userId)
+    ON DELETE CASCADE,
+  FOREIGN KEY (barbeiroId) REFERENCES barbeiros(barbeiroId)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_agendamentos_barbeiro_data ON agendamentos(barbeiroId, data);
+CREATE INDEX idx_agendamentos_cliente ON agendamentos(clienteId);
+
+CREATE TABLE agendamento_servicos (
+  agendamentoServicoId INT AUTO_INCREMENT PRIMARY KEY,
+  agendamentoId         INT NOT NULL,
+  servicoId             INT NOT NULL,
+  nomeServicoSnapshot   VARCHAR(100) NOT NULL,
+  precoSnapshot         DECIMAL(10,2) NOT NULL,
+
+  FOREIGN KEY (agendamentoId) REFERENCES agendamentos(agendamentoId)
+    ON DELETE CASCADE,
+  FOREIGN KEY (servicoId) REFERENCES servicos(servicoId)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_agendamento_servicos_agendamentoId ON agendamento_servicos(agendamentoId);
+
+-- =====================================================================
+-- O QUE O BANCO NÃO GARANTE SOZINHO — precisa de validação no PHP:
+--
+-- • Conflito de horário: nada aqui impede dois agendamentos
+--   sobrepostos para o mesmo barbeiro. O endpoint de criar agendamento
+--   precisa checar isso explicitamente antes do INSERT.
+--
+-- • Vínculo exclusivo do barbeiro: nada impede um profissional de
+--   aceitar dois convites de barbearias diferentes. O endpoint que
+--   processa aceite de convite precisa checar se barbeiros.barbeariaId
+--   já está preenchido antes de permitir aceitar outro.
+--
+-- • Slots disponíveis são CALCULADOS, não armazenados: jornada menos
+--   bloqueios menos agendamentos já confirmados. Isso fica na lógica
+--   do endpoint get_slots_disponiveis.php, não numa tabela.
+-- =====================================================================

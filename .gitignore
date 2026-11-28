@@ -37,5 +37,14 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
-/android
+App/ios
+App/android
+
+# Claude Code (config local)
+.claude/settings.local.json
+
+# Fotos enviadas pelos usuários (dados reais, não vão pro repositório)
+Servidor/uploads/**
+!Servidor/uploads/**/
+!Servidor/uploads/**/.gitkeep
+!Servidor/uploads/.htaccess
